@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState } from "react";
+﻿import React, { Suspense, lazy, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Navbar from "./Navbar";
 import Footer from "./Footer";
@@ -6,21 +6,23 @@ import AdminHeader from "./AdminHeader.jsx";
 import "./App.css";
 
 const Home = lazy(() => import("./Home.jsx"));
+const News = lazy(() => import("./News.jsx"));
+const NewsDetail = lazy(() => import("./NewsDetail.jsx"));
 const Services = lazy(() => import("./Services.jsx"));
 const Posts = lazy(() => import("./Posts.jsx"));
 const PostDetails = lazy(() => import("./PostDetails.jsx"));
 const MyPosts = lazy(() => import("./MyPosts.jsx"));
 const Account = lazy(() => import("./Account.jsx"));
+const Notifications = lazy(() => import("./Notifications.jsx"));
+const NotificationsDetail = lazy(() => import("./NotificationsDetail.jsx"));
 const Contact = lazy(() => import("./Contact.jsx"));
 const Login = lazy(() => import("./Login.jsx"));
 const Signup = lazy(() => import("./Signup.jsx"));
 const AdminAccess = lazy(() => import("./AdminAccess.jsx"));
 const AdminPanel = lazy(() => import("./AdminPanel.jsx"));
 const PostService = lazy(() => import("./PostService.jsx"));
-const Purchase = lazy(() => import("./Purchase.jsx"));
-const MyShop = lazy(() => import("./MyShop.jsx"));
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000";
+const API_BASE = import.meta.env.VITE_API_BASE || "https://puneclassifieds.onrender.com";
 
 const RequireAuth = ({ children }) => {
   const token = localStorage.getItem("token");
@@ -32,25 +34,6 @@ const RequireAdmin = ({ children }) => {
   return token ? children : <Navigate to="/admin-login" replace />;
 };
 
-const RequireRole = ({ role, children }) => {
-  const token = localStorage.getItem("token");
-  if (!token) {
-    if (role === "seller") return <Navigate to="/login?role=seller" replace />;
-    return <Navigate to="/login" replace />;
-  }
-  try {
-    const user = JSON.parse(localStorage.getItem("user") || "{}");
-    if ((user?.role || "buyer") !== role) {
-      if (role === "seller") return <Navigate to="/login?role=seller" replace />;
-      return <Navigate to="/" replace />;
-    }
-  } catch {
-    if (role === "seller") return <Navigate to="/login?role=seller" replace />;
-    return <Navigate to="/" replace />;
-  }
-  return children;
-};
-
 const Loader = () => (
   <div className="page-loader">
     <div className="loader-dot"></div>
@@ -59,47 +42,27 @@ const Loader = () => (
   </div>
 );
 
-const RootEntry = ({ apiBase }) => {
-  try {
-    const token = localStorage.getItem("token");
-    const user = JSON.parse(localStorage.getItem("user") || "{}");
-    if (token && (user?.role || "buyer") === "seller") {
-      return <Navigate to="/my-shop" replace />;
-    }
-  } catch {}
-  return <Home apiBase={apiBase} />;
-};
-
 const Layout = () => {
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith("/admin") || location.pathname.startsWith("/dashboard");
-  const isDashboardRoute = location.pathname.startsWith("/dashboard");
-  const showLegacyAdminHeader = isAdminRoute && !location.pathname.startsWith("/dashboard");
-  const isSellerDashboardRoute = location.pathname.startsWith("/my-shop");
   const isAuthRoute = location.pathname === "/login" || location.pathname === "/signup" || location.pathname === "/admin-login";
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className={`app-shell ${isAdminRoute ? "admin-shell" : ""} ${isAuthRoute ? "auth-shell" : ""}`}>
-      {!isAuthRoute && !isSellerDashboardRoute && !isDashboardRoute && (showLegacyAdminHeader ? (
+      {!isAuthRoute && (isAdminRoute ? (
         <AdminHeader sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
       ) : (
         <Navbar apiBase={API_BASE} />
       ))}
       <Suspense fallback={<Loader />}>
         <Routes>
-          <Route path="/" element={<RootEntry apiBase={API_BASE} />} />
+          <Route path="/" element={<Home apiBase={API_BASE} />} />
+          <Route path="/news" element={<News apiBase={API_BASE} />} />
+          <Route path="/news/:id" element={<NewsDetail apiBase={API_BASE} />} />
           <Route path="/services" element={<Services apiBase={API_BASE} />} />
           <Route path="/posts" element={<Posts apiBase={API_BASE} />} />
           <Route path="/posts/:id" element={<PostDetails apiBase={API_BASE} />} />
-          <Route
-            path="/purchase"
-            element={
-              <RequireRole role="buyer">
-                <Purchase apiBase={API_BASE} />
-              </RequireRole>
-            }
-          />
           <Route
             path="/my-posts"
             element={
@@ -116,6 +79,8 @@ const Layout = () => {
               </RequireAuth>
             }
           />
+          <Route path="/notifications" element={<Notifications apiBase={API_BASE} />} />
+          <Route path="/notifications/:id" element={<NotificationsDetail apiBase={API_BASE} />} />
           <Route path="/contact" element={<Contact apiBase={API_BASE} />} />
           <Route path="/login" element={<Login apiBase={API_BASE} />} />
           <Route path="/signup" element={<Signup apiBase={API_BASE} />} />
@@ -131,31 +96,15 @@ const Layout = () => {
           <Route
             path="/post-service"
             element={
-              <RequireRole role="seller">
+              <RequireAuth>
                 <PostService apiBase={API_BASE} />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/start-selling"
-            element={
-              <RequireRole role="seller">
-                <PostService apiBase={API_BASE} />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/my-shop"
-            element={
-              <RequireRole role="seller">
-                <MyShop apiBase={API_BASE} />
-              </RequireRole>
+              </RequireAuth>
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
-      {!isAdminRoute && !isAuthRoute && !isSellerDashboardRoute && <Footer apiBase={API_BASE} />}
+      {!isAdminRoute && !isAuthRoute && <Footer apiBase={API_BASE} />}
     </div>
   );
 };
