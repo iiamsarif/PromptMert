@@ -20,7 +20,7 @@ const PostService = lazy(() => import("./PostService.jsx"));
 const Purchase = lazy(() => import("./Purchase.jsx"));
 const MyShop = lazy(() => import("./MyShop.jsx"));
 
-const rawApiBase = (import.meta.env.VITE_API_BASE || "").trim();
+const rawApiBase = (import.meta.env.VITE_API_BASE || "https://promptmert.onrender.com").trim();
 const API_BASE = rawApiBase || (import.meta.env.DEV ? "https://promptmert.onrender.com" : "");
 
 const MissingApiBaseGuard = () => (
