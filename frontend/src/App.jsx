@@ -20,7 +20,20 @@ const PostService = lazy(() => import("./PostService.jsx"));
 const Purchase = lazy(() => import("./Purchase.jsx"));
 const MyShop = lazy(() => import("./MyShop.jsx"));
 
-const API_BASE = import.meta.env.VITE_API_BASE || "https://promptmert.onrender.com";
+const rawApiBase = (import.meta.env.VITE_API_BASE || "").trim();
+const API_BASE = rawApiBase || (import.meta.env.DEV ? "https://promptmert.onrender.com" : "");
+
+const MissingApiBaseGuard = () => (
+  <div className="page-loader" style={{ minHeight: "100vh", padding: "24px", textAlign: "center", flexDirection: "column", gap: "12px" }}>
+    <h2 style={{ margin: 0 }}>Missing API Configuration</h2>
+    <p style={{ margin: 0, maxWidth: 560 }}>
+      `VITE_API_BASE` is required in production. Add it in your Vercel project settings and redeploy.
+    </p>
+    <code style={{ background: "#111", color: "#fff", padding: "8px 10px", borderRadius: 8 }}>
+      VITE_API_BASE=https://your-backend.onrender.com
+    </code>
+  </div>
+);
 
 const RequireAuth = ({ children }) => {
   const token = localStorage.getItem("token");
@@ -160,12 +173,18 @@ const Layout = () => {
   );
 };
 
-const App = () => (
-  <Router>
-    <Layout />
-  </Router>
-);
+const App = () => {
+  if (import.meta.env.PROD && !rawApiBase) {
+    console.error("Missing VITE_API_BASE in production build.");
+    return <MissingApiBaseGuard />;
+  }
+
+  return (
+    <Router>
+      <Layout />
+    </Router>
+  );
+};
 
 export default App;
-
 
