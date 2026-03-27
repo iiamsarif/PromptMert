@@ -21,6 +21,14 @@ const Home = ({ apiBase }) => {
       return "";
     }
   });
+  const [heroForegrounds, setHeroForegrounds] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem("heroForeCache") || "[]");
+      return Array.isArray(cached) ? cached.slice(0, 5) : [];
+    } catch {
+      return [];
+    }
+  });
   const categoriesRef = useRef(null);
   const cleanText = (value) => (value || '').replace(/\\r?\\n/g, ' ').trim();
   const navigate = useNavigate();
@@ -71,18 +79,25 @@ const Home = ({ apiBase }) => {
         setPosts(p?.items || []);
         const nextHeroImage = settings?.heroImage || "";
         const nextHeroBg = settings?.heroBg || "";
-        if (nextHeroImage && nextHeroImage !== heroImage) {
-          setHeroImage(nextHeroImage);
-          try {
-            localStorage.setItem("heroImageCache", nextHeroImage);
-          } catch {}
-        }
-        if (nextHeroBg && nextHeroBg !== heroBg) {
-          setHeroBg(nextHeroBg);
-          try {
-            localStorage.setItem("heroBgCache", nextHeroBg);
-          } catch {}
-        }
+        const nextForegrounds = [
+          settings?.foreBg1 || "",
+          settings?.foreBg2 || "",
+          settings?.foreBg3 || "",
+          settings?.foreBg4 || "",
+          settings?.foreBg5 || ""
+        ];
+        setHeroImage(nextHeroImage);
+        try {
+          localStorage.setItem("heroImageCache", nextHeroImage);
+        } catch {}
+        setHeroBg(nextHeroBg);
+        try {
+          localStorage.setItem("heroBgCache", nextHeroBg);
+        } catch {}
+        setHeroForegrounds(nextForegrounds);
+        try {
+          localStorage.setItem("heroForeCache", JSON.stringify(nextForegrounds));
+        } catch {}
       } catch (err) {
         console.error(err);
       }
@@ -177,6 +192,22 @@ const Home = ({ apiBase }) => {
     navigate(`/posts?search=${encodeURIComponent(term)}`);
   };
 
+  const heroDeckImages = React.useMemo(() => {
+    const postImages = (posts || [])
+      .map((item) => item?.posterUrl || (Array.isArray(item?.imageUrls) ? item.imageUrls[0] : "") || item?.imageUrl || "")
+      .filter(Boolean);
+    const fallbacks = [
+      "https://images.unsplash.com/photo-1522199755839-a2bacb67c546?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=1200&q=80"
+    ];
+    return Array.from({ length: 5 }, (_, idx) => (
+      heroForegrounds[idx] || postImages[idx] || fallbacks[idx % fallbacks.length]
+    ));
+  }, [heroForegrounds, posts]);
+
   return (
     <main className="page home-page">
       <section className="hero-section">
@@ -190,8 +221,8 @@ const Home = ({ apiBase }) => {
             playsInline
           />
         )}
-        <div className="container hero-layout">
-          <div className="hero-content">
+        <div className="container hero-layout hero-layout-seven">
+          <div className="hero-content hero-content-seven">
             <div className="hero-tag section-label">Creator-First Digital Marketplace</div>
             <h1 className="hero-title">Buy and sell digital assets for your next product, campaign, or client project.</h1>
             <p className="hero-subtitle">
@@ -220,21 +251,24 @@ const Home = ({ apiBase }) => {
               <NavLink to="/posts" className="ghost-btn">View Products</NavLink>
             </div>
           </div>
-          <div className="hero-visual">
-            <div className="hero-fore-description">
-              <h3>Creative Assets Marketplace</h3>
-              <p>Secure marketplace where creators sell videos, photos, prompts, and source code globally efficiently.</p>
-            </div>
-            {heroImage && (
-              <img
-                className="hero-image"
-                src={heroImage}
-                alt="Marketplace showcase"
-                loading="lazy"
-              />
-            )}
-            <div className="hero-glow"></div>
-          </div>
+          {heroImage && (
+            <img
+              className="hero-seven-float-image"
+              src={heroImage}
+              alt="Marketplace showcase"
+              loading="lazy"
+            />
+          )}
+        </div>
+        <div className="hero-foreground-showcase" aria-hidden="true">
+          {heroDeckImages.map((image, index) => (
+            <article
+              key={`hero-fore-${index}`}
+              className={`hero-foreground-card fore-${index + 1}`}
+            >
+              <img src={image || fallbackHero} alt="" loading="lazy" />
+            </article>
+          ))}
         </div>
       </section>
 
@@ -362,18 +396,22 @@ const Home = ({ apiBase }) => {
 
       
 
-      <section className="section section-light">
-        <div className="container about-layout">
-          <div>
+      <section className="section section-light about-sunburst-section">
+        <div className="container about-layout about-premium-shell">
+          <div className="about-premium-copy">
             <div className="section-label">ABOUT</div>
             <h2>Creative Asset Marketplace</h2>
             <p>
               Our marketplace streamlines digital asset exchange so teams can launch faster.
               Discover high-quality creative resources and instantly move from idea to execution.
             </p>
-            <div className="about-visual parallax-media" data-speed="0.8">
+            <div className="about-kpi-row">
+              <strong>98%</strong>
+              <span>Seller quality score</span>
+            </div>
+            <div className="about-visual parallax-media premium-about-media" data-speed="0.8">
               <img
-                src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1400&q=80"
+                src="http://images.pexels.com/photos/109371/pexels-photo-109371.jpeg?_gl=1*1jh8rwv*_ga*MTM2NDg4Njc4Ny4xNzcyODY2ODE5*_ga_8JE65Q40S6*czE3NzQ1OTE4MzgkbzM3JGcxJHQxNzc0NTkxOTQyJGozNCRsMCRoMA.."
                 alt="Digital marketplace"
                 loading="lazy"
                 onError={(e) => {
@@ -383,7 +421,7 @@ const Home = ({ apiBase }) => {
               />
             </div>
           </div>
-          <div className="stat-grid">
+          <div className="stat-grid about-premium-stats">
             <div className="card float-card">
               <h3>98%</h3>
               <p>Seller quality score</p>
@@ -396,8 +434,8 @@ const Home = ({ apiBase }) => {
         </div>
       </section>
 
-      <section className="section">
-        <div className="container">
+      <section className="section why-tropic-section">
+        <div className="container why-premium-shell">
           <div className="section-head">
             <div>
               <div className="section-label">WHY US</div>
@@ -405,10 +443,30 @@ const Home = ({ apiBase }) => {
             </div>
             <p>A secure, high-trust ecosystem built for modern digital commerce.</p>
           </div>
-          <div className="section-visual">
+          <div className="section-visual why-premium-visual">
             <img
-              src="https://images.unsplash.com/photo-1553877522-43269d4ea984?auto=format&fit=crop&w=1200&q=80"
-              alt="Why us"
+              src="https://images.pexels.com/photos/265685/pexels-photo-265685.jpeg?_gl=1*ucw2g6*_ga*MTM2NDg4Njc4Ny4xNzcyODY2ODE5*_ga_8JE65Q40S6*czE3NzQ1ODY3MjckbzM2JGcxJHQxNzc0NTg2NzQyJGo0NSRsMCRoMA.."
+              alt="Digital creator workspace"
+              loading="lazy"
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = fallbackHero;
+              }}
+            />
+            <img
+              className="why-float-media why-float-media-a"
+              src="https://images.pexels.com/photos/34140/pexels-photo.jpg?_gl=1*8zqwbl*_ga*MTM2NDg4Njc4Ny4xNzcyODY2ODE5*_ga_8JE65Q40S6*czE3NzQ1ODY3MjckbzM2JGcxJHQxNzc0NTg2NzcxJGoxNiRsMCRoMA.."
+              alt="Digital product analytics dashboard"
+              loading="lazy"
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = fallbackHero;
+              }}
+            />
+            <img
+              className="why-float-media why-float-media-b"
+              src="https://images.pexels.com/photos/13012466/pexels-photo-13012466.jpeg?_gl=1*ji0lza*_ga*MTM2NDg4Njc4Ny4xNzcyODY2ODE5*_ga_8JE65Q40S6*czE3NzQ1ODY3MjckbzM2JGcxJHQxNzc0NTg2ODgzJGo0OSRsMCRoMA.."
+              alt="Creative team collaboration"
               loading="lazy"
               onError={(e) => {
                 e.currentTarget.onerror = null;
@@ -416,7 +474,7 @@ const Home = ({ apiBase }) => {
               }}
             />
           </div>
-          <div className="services-grid">
+          <div className="services-grid why-premium-grid">
             <div className="card">
               <div className="service-number">01</div>
               <h4>Verified Content</h4>
@@ -441,8 +499,8 @@ const Home = ({ apiBase }) => {
         </div>
       </section>
 
-      <section className="section testimonials-section">
-        <div className="container">
+      <section className="section testimonials-section tropical-trust-section">
+        <div className="container trust-premium-shell">
           <div className="trusted-strip">
             <div className="section-label">TRUSTED BY</div>
             <h2>Selected creator studios, product teams, and digital partners.</h2>
@@ -461,6 +519,17 @@ const Home = ({ apiBase }) => {
                 <span>AI PROMPTS</span>
                 <span>SOURCE CODE</span>
               </div>
+            </div>
+          </div>
+          <div className="fresh-produce-board" aria-hidden="true">
+            <div className="fresh-produce-left">Build Faster With Premium Digital Assets</div>
+            <div className="fresh-produce-right">
+              <span>🎬 Cinematic Videos</span>
+              <span>📸 Photo Packs</span>
+              <span>🤖 AI Prompt Bundles</span>
+              <span>💻 Source Code Kits</span>
+              <span>🎨 UI Resource Packs</span>
+              <span>🌐 Website Themes</span>
             </div>
           </div>
 
@@ -503,8 +572,26 @@ const Home = ({ apiBase }) => {
         </div>
       </section>
 
-      <section className="section section-light faq-section">
-        <div className="container">
+      <section className="section section-light faq-section lemon-faq-section">
+        <div className="container faq-premium-shell">
+          <div className="retina-showcase">
+            <h3>FULLY RESPONSIVE & RETINA READY</h3>
+            <p>All templates stay sharp across desktops, tablets, and mobile screens.</p>
+            <div className="retina-devices">
+              <article className="retina-device retina-desktop">
+                <img src={heroImage || fallbackHero} alt="Desktop preview" loading="lazy" />
+              </article>
+              <article className="retina-device retina-laptop">
+                <img src={heroDeckImages[1] || fallbackHero} alt="Laptop preview" loading="lazy" />
+              </article>
+              <article className="retina-device retina-tablet">
+                <img src={heroDeckImages[2] || fallbackHero} alt="Tablet preview" loading="lazy" />
+              </article>
+              <article className="retina-device retina-mobile">
+                <img src={heroDeckImages[3] || fallbackHero} alt="Mobile preview" loading="lazy" />
+              </article>
+            </div>
+          </div>
           <div className="section-head">
             <div className="section-label">FAQS</div>
             
@@ -563,8 +650,6 @@ const Home = ({ apiBase }) => {
 };
 
 export default Home;
-
-
 
 
 

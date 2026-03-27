@@ -5,6 +5,66 @@ import { useNavigate } from "react-router-dom";
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
 const PAGE_SIZE = 10;
+const foregroundKeys = ["foreBg1", "foreBg2", "foreBg3", "foreBg4", "foreBg5"];
+
+const SidebarNavIcon = ({ type }) => {
+  const iconMap = {
+    dashboard: (
+      <>
+        <path d="M3 10.5 12 3l9 7.5" />
+        <path d="M5 9.5V21h14V9.5" />
+        <path d="M10 21v-6h4v6" />
+      </>
+    ),
+    pending: (
+      <>
+        <path d="M8 3h8l4 4v14H4V3h4Z" />
+        <path d="M16 3v4h4" />
+        <path d="M8 11h8M8 15h8" />
+      </>
+    ),
+    approved: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="m8.5 12 2.2 2.2 4.8-4.8" />
+      </>
+    ),
+    users: (
+      <>
+        <path d="M16.5 21v-1.6a3.6 3.6 0 0 0-3.6-3.6H7.6A3.6 3.6 0 0 0 4 19.4V21" />
+        <circle cx="10.3" cy="8.4" r="3.4" />
+        <path d="M16.8 10.5 18 11.7l2.2-2.2" />
+      </>
+    ),
+    categories: (
+      <>
+        <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+        <path d="M8 12h8" />
+      </>
+    ),
+    settings: (
+      <>
+        <circle cx="12" cy="12" r="2.5" />
+        <path d="m19.4 15 1.1 1.9-2 3.5-2.2-.2a7.7 7.7 0 0 1-1.5.8L13.7 23h-3.4l-1.1-2a7.7 7.7 0 0 1-1.5-.8l-2.2.2-2-3.5 1.1-1.9a8.7 8.7 0 0 1 0-2l-1.1-1.9 2-3.5 2.2.2a7.7 7.7 0 0 1 1.5-.8l1.1-2h3.4l1.1 2a7.7 7.7 0 0 1 1.5.8l2.2-.2 2 3.5-1.1 1.9a8.7 8.7 0 0 1 0 2Z" />
+      </>
+    ),
+    purchases: (
+      <>
+        <rect x="3" y="6" width="18" height="12" rx="2" />
+        <path d="M3 10h18" />
+        <path d="M7 15h3" />
+      </>
+    )
+  };
+
+  return (
+    <span className="nav-icon nav-icon-svg" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        {iconMap[type] || iconMap.dashboard}
+      </svg>
+    </span>
+  );
+};
 
 const AdminPanel = ({ apiBase, sidebarOpen, setSidebarOpen }) => {
   const navigate = useNavigate();
@@ -21,12 +81,22 @@ const AdminPanel = ({ apiBase, sidebarOpen, setSidebarOpen }) => {
   const [categoryForm, setCategoryForm] = useState({ name: "", description: "", types: [] });
   const [typeInput, setTypeInput] = useState("");
   const [settings, setSettings] = useState({
-    heroImage: "",
     heroBg: "",
     contactEmail: "",
+    foreBg1: "",
+    foreBg2: "",
+    foreBg3: "",
+    foreBg4: "",
+    foreBg5: "",
   });
-  const [heroImageFile, setHeroImageFile] = useState(null);
   const [heroVideoFile, setHeroVideoFile] = useState(null);
+  const [foregroundFiles, setForegroundFiles] = useState({
+    foreBg1: null,
+    foreBg2: null,
+    foreBg3: null,
+    foreBg4: null,
+    foreBg5: null
+  });
   const [status, setStatus] = useState("");
   const [active, setActive] = useState("dashboard");
   const [editPost, setEditPost] = useState(null);
@@ -132,9 +202,13 @@ const AdminPanel = ({ apiBase, sidebarOpen, setSidebarOpen }) => {
       setCategories(c);
       setTrending(tr || []);
       setSettings({
-        heroImage: s?.heroImage || "",
         heroBg: s?.heroBg || "",
         contactEmail: s?.contactEmail || "",
+        foreBg1: s?.foreBg1 || "",
+        foreBg2: s?.foreBg2 || "",
+        foreBg3: s?.foreBg3 || "",
+        foreBg4: s?.foreBg4 || "",
+        foreBg5: s?.foreBg5 || "",
       });
     } catch (err) {
       console.error(err);
@@ -283,8 +357,12 @@ const AdminPanel = ({ apiBase, sidebarOpen, setSidebarOpen }) => {
     await withLoading(async () => {
       const formData = new FormData();
       formData.append("contactEmail", settings.contactEmail || "");
-      if (heroImageFile) formData.append("heroImage", heroImageFile);
       if (heroVideoFile) formData.append("heroVideo", heroVideoFile);
+      foregroundKeys.forEach((key) => {
+        if (foregroundFiles[key]) {
+          formData.append(key, foregroundFiles[key]);
+        }
+      });
       const res = await fetch(`${apiBase}/api/settings/web`, {
         method: "PUT",
         headers: {
@@ -294,8 +372,14 @@ const AdminPanel = ({ apiBase, sidebarOpen, setSidebarOpen }) => {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "Failed to update settings.");
-      setHeroImageFile(null);
       setHeroVideoFile(null);
+      setForegroundFiles({
+        foreBg1: null,
+        foreBg2: null,
+        foreBg3: null,
+        foreBg4: null,
+        foreBg5: null
+      });
       await loadData();
     }, "Settings updated");
   };
@@ -304,8 +388,8 @@ const AdminPanel = ({ apiBase, sidebarOpen, setSidebarOpen }) => {
     setHeroVideoFile(file || null);
   };
 
-  const handleHeroImage = (file) => {
-    setHeroImageFile(file || null);
+  const handleForegroundImage = (key, file) => {
+    setForegroundFiles((prev) => ({ ...prev, [key]: file || null }));
   };
 
   const handleEditImage = (file) => {
@@ -508,27 +592,27 @@ const AdminPanel = ({ apiBase, sidebarOpen, setSidebarOpen }) => {
         </div>
       )}
       <aside className={`admin-sidebar ${sidebarOpen ? "open" : ""}`}>
-        <h2>CREATIVE TIM</h2>
+        <h2>PROMPTMERT</h2>
         <button className={`nav-item ${active === "dashboard" ? "active" : ""}`} onClick={() => { setActive("dashboard"); setSidebarOpen(false); }}>
-          <span className="nav-icon">🏠</span> Dashboard
+          <SidebarNavIcon type="dashboard" /> Dashboard
         </button>
         <button className={`nav-item ${active === "pending" ? "active" : ""}`} onClick={() => { setActive("pending"); setSidebarOpen(false); }}>
-          <span className="nav-icon">🧾</span> Pending Products
+          <SidebarNavIcon type="pending" /> Pending Products
         </button>
         <button className={`nav-item ${active === "approved" ? "active" : ""}`} onClick={() => { setActive("approved"); setSidebarOpen(false); }}>
-          <span className="nav-icon">✅</span> Approved Products
+          <SidebarNavIcon type="approved" /> Approved Products
         </button>
         <button className={`nav-item ${active === "users" ? "active" : ""}`} onClick={() => { setActive("users"); setSidebarOpen(false); }}>
-          <span className="nav-icon">🧑‍💼</span> Control Users
+          <SidebarNavIcon type="users" /> Control Users
         </button>
         <button className={`nav-item ${active === "categories" ? "active" : ""}`} onClick={() => { setActive("categories"); setSidebarOpen(false); }}>
-          <span className="nav-icon">🗂️</span> Categories
+          <SidebarNavIcon type="categories" /> Categories
         </button>
         <button className={`nav-item ${active === "settings" ? "active" : ""}`} onClick={() => { setActive("settings"); setSidebarOpen(false); }}>
-          <span className="nav-icon">🛠️</span> Settings
+          <SidebarNavIcon type="settings" /> Settings
         </button>
         <button className={`nav-item ${active === "purchases" ? "active" : ""}`} onClick={() => { setActive("purchases"); setSidebarOpen(false); loadPurchases(); }}>
-          <span className="nav-icon">💳</span> Purchases
+          <SidebarNavIcon type="purchases" /> Purchases
         </button>
       </aside>
 
@@ -537,11 +621,20 @@ const AdminPanel = ({ apiBase, sidebarOpen, setSidebarOpen }) => {
           <div className="nav-title">Material Dashboard</div>
           <div className="nav-actions">
             <button type="button" className="mobile-side-toggle" onClick={() => setSidebarOpen((v) => !v)}>
-              ☰
+              <span className="admin-inline-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M4 7h16M4 12h16M4 17h16" />
+                </svg>
+              </span>
             </button>
             <div className="admin-user-wrap">
               <button type="button" className="admin-user-btn" onClick={() => setAdminMenuOpen((v) => !v)}>
-                👤
+                <span className="admin-inline-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="8" r="3.2" />
+                    <path d="M5 19c1.7-3.4 4-5 7-5s5.3 1.6 7 5" />
+                  </svg>
+                </span>
               </button>
               {adminMenuOpen && (
                 <div className="admin-user-menu">
@@ -872,13 +965,17 @@ const AdminPanel = ({ apiBase, sidebarOpen, setSidebarOpen }) => {
                 onChange={(e) => handleHeroVideo(e.target.files[0])}
               />
               {settings.heroBg && <small className="muted">Current video: {settings.heroBg}</small>}
-              <label className="field-label">Hero Foreground Image (Upload)</label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleHeroImage(e.target.files[0])}
-              />
-              {settings.heroImage && <small className="muted">Current image: {settings.heroImage}</small>}
+              {foregroundKeys.map((key, index) => (
+                <div key={key}>
+                  <label className="field-label">{`Foreground ${index + 1} Image (Upload)`}</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleForegroundImage(key, e.target.files?.[0])}
+                  />
+                  {settings[key] && <small className="muted">Current image: {settings[key]}</small>}
+                </div>
+              ))}
               <input
                 type="email"
                 placeholder="Contact Email"

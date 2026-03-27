@@ -132,10 +132,7 @@ const Navbar = ({ apiBase }) => {
               <NavLink to={cartPath} className="nav-icon-btn" aria-label="Cart" onClick={() => setOpen(false)}>
                 <span className="nav-icon">🛒</span>
               </NavLink>
-              <NavLink to={accountPath} className="nav-icon-btn" aria-label="Settings" onClick={() => setOpen(false)}>
-                <span className="nav-icon">⚙</span>
-              </NavLink>
-              <NavLink to={accountPath} className="profile-btn" aria-label="Profile" onClick={() => setOpen(false)}>
+                            <NavLink to={accountPath} className="profile-btn" aria-label="Profile" onClick={() => setOpen(false)}>
                 <span className="profile-avatar">
                   {(user?.name || "U").slice(0, 1).toUpperCase()}
                 </span>

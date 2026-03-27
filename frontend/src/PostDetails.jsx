@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 const fallbackImage = "https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=1200&q=80";
+const LIVE_PREVIEW_STORAGE_KEY = "livePreviewUrl";
 
 const PostDetails = ({ apiBase }) => {
   const { id } = useParams();
@@ -116,6 +117,14 @@ const PostDetails = ({ apiBase }) => {
     }
   };
 
+  const openLivePreview = () => {
+    if (!post?.liveLink) return;
+    try {
+      localStorage.setItem(LIVE_PREVIEW_STORAGE_KEY, post.liveLink);
+    } catch {}
+    window.open("/live-preview", "_blank", "noopener,noreferrer");
+  };
+
   if (!post) {
     return (
       <main className="page">
@@ -164,9 +173,9 @@ const PostDetails = ({ apiBase }) => {
               {(access?.hasPurchased || access?.owner) ? "Download Product" : "Download Locked"}
             </button>
             {post.liveLink && (
-              <a className="ghost-btn" href={post.liveLink} target="_blank" rel="noreferrer">
+              <button type="button" className="ghost-btn" onClick={openLivePreview}>
                 Live Link
-              </a>
+              </button>
             )}
           </div>
           {message && <p className="success">{message}</p>}

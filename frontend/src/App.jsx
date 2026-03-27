@@ -19,9 +19,10 @@ const AdminPanel = lazy(() => import("./AdminPanel.jsx"));
 const PostService = lazy(() => import("./PostService.jsx"));
 const Purchase = lazy(() => import("./Purchase.jsx"));
 const MyShop = lazy(() => import("./MyShop.jsx"));
+const LivePreview = lazy(() => import("./LivePreview.jsx"));
 
-const rawApiBase = (import.meta.env.VITE_API_BASE || "https://promptmert.onrender.com").trim();
-const API_BASE = rawApiBase || (import.meta.env.DEV ? "https://promptmert.onrender.com" : "");
+const rawApiBase = (import.meta.env.VITE_API_BASE || "http://localhost:5000").trim();
+const API_BASE = rawApiBase || (import.meta.env.DEV ? "http://localhost:5000" : "");
 
 const MissingApiBaseGuard = () => (
   <div className="page-loader" style={{ minHeight: "100vh", padding: "24px", textAlign: "center", flexDirection: "column", gap: "12px" }}>
@@ -90,11 +91,12 @@ const Layout = () => {
   const showLegacyAdminHeader = isAdminRoute && !location.pathname.startsWith("/dashboard");
   const isSellerDashboardRoute = location.pathname.startsWith("/my-shop");
   const isAuthRoute = location.pathname === "/login" || location.pathname === "/signup" || location.pathname === "/admin-login";
+  const isLivePreviewRoute = location.pathname.startsWith("/live-preview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className={`app-shell ${isAdminRoute ? "admin-shell" : ""} ${isAuthRoute ? "auth-shell" : ""}`}>
-      {!isAuthRoute && !isSellerDashboardRoute && !isDashboardRoute && (showLegacyAdminHeader ? (
+      {!isAuthRoute && !isSellerDashboardRoute && !isDashboardRoute && !isLivePreviewRoute && (showLegacyAdminHeader ? (
         <AdminHeader sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
       ) : (
         <Navbar apiBase={API_BASE} />
@@ -105,6 +107,7 @@ const Layout = () => {
           <Route path="/services" element={<Services apiBase={API_BASE} />} />
           <Route path="/posts" element={<Posts apiBase={API_BASE} />} />
           <Route path="/posts/:id" element={<PostDetails apiBase={API_BASE} />} />
+          <Route path="/live-preview" element={<LivePreview />} />
           <Route
             path="/purchase"
             element={
@@ -168,7 +171,7 @@ const Layout = () => {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
-      {!isAdminRoute && !isAuthRoute && !isSellerDashboardRoute && <Footer apiBase={API_BASE} />}
+      {!isAdminRoute && !isAuthRoute && !isSellerDashboardRoute && !isLivePreviewRoute && <Footer apiBase={API_BASE} />}
     </div>
   );
 };
@@ -187,4 +190,3 @@ const App = () => {
 };
 
 export default App;
-
