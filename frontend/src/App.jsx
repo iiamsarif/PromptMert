@@ -21,8 +21,8 @@ const PurchaseHistoryPage = lazy(() => import("./PurchaseHistoryPage.jsx"));
 const SellerDashboardPage = lazy(() => import("./SellerDashboardPage.jsx"));
 const LivePreview = lazy(() => import("./LivePreview.jsx"));
 
-const rawApiBase = (import.meta.env.VITE_API_BASE || "http://localhost:5000").trim();
-const API_BASE = rawApiBase || (import.meta.env.DEV ? "http://localhost:5000" : "");
+const rawApiBase = (import.meta.env.VITE_API_BASE || "https://promptmert.onrender.com").trim();
+const API_BASE = rawApiBase || (import.meta.env.DEV ? "https://promptmert.onrender.com" : "");
 
 const MissingApiBaseGuard = () => (
   <div className="page-loader" style={{ minHeight: "100vh", padding: "24px", textAlign: "center", flexDirection: "column", gap: "12px" }}>
