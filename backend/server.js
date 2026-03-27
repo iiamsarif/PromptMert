@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const jwt = require("jsonwebtoken");
@@ -22,6 +22,7 @@ const dbName = process.env.DB_NAME || "Prompt_Mert";
 const jwtSecret = process.env.JWT_SECRET || "secret";
 const razorpayKeyId = process.env.RAZORPAY_KEY_ID || "rzp_test_SQHLLEV5FDWHor";
 const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || "bocNb5CJgijW795LHBuytf6w";
+const MAX_PRODUCT_IMAGES = 3;
 const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const normalizeEmail = (value = "") => String(value || "").trim().toLowerCase();
 const normalizeShopName = (value = "") => String(value || "").trim();
@@ -49,6 +50,17 @@ const parseTypes = (value) => {
       .split(",")
       .map((v) => v.trim())
       .filter(Boolean);
+  }
+};
+const sanitizeHttpUrl = (value = "") => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  try {
+    const parsed = new URL(trimmed);
+    if (!["http:", "https:"].includes(parsed.protocol)) return "";
+    return parsed.toString();
+  } catch {
+    return "";
   }
 };
 const isVideoCategory = (value = "") => /video/i.test(String(value || ""));
@@ -95,7 +107,7 @@ const maybeZipSingle = (field) => (req, res, next) => {
 const maybeProductFiles = (req, res, next) => {
   if (req.is("multipart/form-data")) {
     return multer({ storage, limits: { fileSize: 180 * 1024 * 1024 } }).fields([
-      { name: "images", maxCount: 6 },
+      { name: "images", maxCount: MAX_PRODUCT_IMAGES },
       { name: "videos", maxCount: 1 },
       { name: "poster", maxCount: 1 },
       { name: "zipFile", maxCount: 1 }
@@ -390,21 +402,6 @@ app.post("/api/admin/login", async (req, res) => {
   return res.json({ token });
 });
 
-const createListing = (collection) => async (req, res) => {
-  const payload = { ...req.body, status: "pending", createdAt: new Date(), userId: req.user.id };
-  const db = await getDb();
-  await db.collection(collection).insertOne(payload);
-  return res.json({ message: "Submitted" });
-};
-
-const listItems = (collection) => async (req, res) => {
-  const query = {};
-  if (req.query.status) query.status = req.query.status;
-  const db = await getDb();
-  const items = await db.collection(collection).find(query).sort({ createdAt: -1 }).toArray();
-  return res.json(items);
-};
-
 const approveItem = (collection) => async (req, res) => {
   const db = await getDb();
   await db.collection(collection).updateOne(
@@ -419,21 +416,6 @@ const deleteItem = (collection) => async (req, res) => {
   await db.collection(collection).deleteOne({ _id: new ObjectId(req.params.id) });
   return res.json({ message: "Deleted" });
 };
-
-app.get("/api/jobs", listItems("jobs"));
-app.post("/api/jobs", authMiddleware, createListing("jobs"));
-app.put("/api/jobs/:id/approve", adminMiddleware, approveItem("jobs"));
-app.delete("/api/jobs/:id", adminMiddleware, deleteItem("jobs"));
-
-app.get("/api/properties", listItems("properties"));
-app.post("/api/properties", authMiddleware, createListing("properties"));
-app.put("/api/properties/:id/approve", adminMiddleware, approveItem("properties"));
-app.delete("/api/properties/:id", adminMiddleware, deleteItem("properties"));
-
-app.get("/api/pets", listItems("pets"));
-app.post("/api/pets", authMiddleware, createListing("pets"));
-app.put("/api/pets/:id/approve", adminMiddleware, approveItem("pets"));
-app.delete("/api/pets/:id", adminMiddleware, deleteItem("pets"));
 
 app.get("/api/categories", async (req, res) => {
   const db = await getDb();
@@ -487,10 +469,18 @@ app.put("/api/categories/:id", adminMiddleware, maybeImageSingle("icon"), async 
 
 const buildProductQuery = (query) => {
   const and = [];
-  const { status, category, type, search } = query || {};
+  const { status, category, type, search, shop } = query || {};
   if (status) and.push({ status });
   if (category) and.push({ category: { $regex: `^${escapeRegex(category)}$`, $options: "i" } });
   if (type) and.push({ type: { $regex: `^${escapeRegex(type)}$`, $options: "i" } });
+  if (shop) {
+    and.push({
+      $or: [
+        { sellerShopName: { $regex: `^${escapeRegex(shop)}$`, $options: "i" } },
+        { sellerEmail: { $regex: `^${escapeRegex(shop)}$`, $options: "i" } }
+      ]
+    });
+  }
   if (search) {
     and.push({
       $or: [
@@ -504,16 +494,25 @@ const buildProductQuery = (query) => {
   return and.length ? { $and: and } : {};
 };
 
+const buildProductSort = (sort) => {
+  const key = String(sort || "").trim().toLowerCase();
+  if (key === "sales_desc") return { salesCount: -1, createdAt: -1 };
+  if (key === "price_asc") return { price: 1, createdAt: -1 };
+  if (key === "price_desc") return { price: -1, createdAt: -1 };
+  return { createdAt: -1 };
+};
+
 app.get("/api/posts", async (req, res) => {
   const db = await getDb();
   const page = Math.max(1, parseInt(req.query.page || "1", 10));
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || "6", 10)));
   const query = buildProductQuery(req.query);
+  const sort = buildProductSort(req.query.sort);
   const total = await db.collection("posts").countDocuments(query);
   const items = await db
     .collection("posts")
     .find(query)
-    .sort({ createdAt: -1 })
+    .sort(sort)
     .skip((page - 1) * limit)
     .limit(limit)
     .toArray();
@@ -525,22 +524,16 @@ app.get("/api/products", async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page || "1", 10));
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || "6", 10)));
   const query = buildProductQuery(req.query);
+  const sort = buildProductSort(req.query.sort);
   const total = await db.collection("posts").countDocuments(query);
   const items = await db
     .collection("posts")
     .find(query)
-    .sort({ createdAt: -1 })
+    .sort(sort)
     .skip((page - 1) * limit)
     .limit(limit)
     .toArray();
   return res.json({ items, page, pages: Math.max(1, Math.ceil(total / limit)), total });
-});
-
-app.get("/api/posts/:id", async (req, res) => {
-  const db = await getDb();
-  const item = await db.collection("posts").findOne({ _id: new ObjectId(req.params.id) });
-  if (!item) return res.status(404).json({ message: "Not found" });
-  return res.json(item);
 });
 
 app.get("/api/products/:id", async (req, res) => {
@@ -584,100 +577,6 @@ app.get("/api/admin/posts/:id/details", adminMiddleware, async (req, res) => {
   return res.json({ post, user });
 });
 
-app.get("/api/my-posts", authMiddleware, async (req, res) => {
-  const db = await getDb();
-  if ((req.user.role || "buyer") !== "seller") {
-    return res.status(403).json({ message: "Seller access required" });
-  }
-  const items = await db.collection("posts").find({
-    $or: [{ sellerEmail: req.user.email }, { sellerId: req.user.id }, { userEmail: req.user.email }, { userId: req.user.id }]
-  }).sort({ createdAt: -1 }).toArray();
-  return res.json(items);
-});
-
-app.get("/api/my-products", authMiddleware, requireSeller, async (req, res) => {
-  const db = await getDb();
-  const items = await db.collection("posts").find({
-    $or: [{ sellerEmail: req.user.email }, { sellerId: req.user.id }, { userEmail: req.user.email }, { userId: req.user.id }]
-  }).sort({ createdAt: -1 }).toArray();
-  return res.json(items);
-});
-
-app.post("/api/posts", authMiddleware, requireSeller, maybeProductFiles, async (req, res) => {
-  const db = await getDb();
-  const users = await db.collection("users").find({ _id: new ObjectId(req.user.id) }).toArray();
-  const seller = users[0] || {};
-  const title = String(req.body.title || "").trim();
-  const description = String(req.body.description || "").trim();
-  const category = String(req.body.category || "").trim();
-  const type = String(req.body.type || "").trim();
-  const liveLink = String(req.body.liveLink || "").trim();
-  const price = Number(req.body.price || 0);
-  if (!title || !description || !category || !type || !price || price <= 0) {
-    return res.status(400).json({ message: "Title, description, category, type, and valid price are required." });
-  }
-  const files = req.files || {};
-  const imageFiles = Array.isArray(files.images) ? files.images : [];
-  const videoFile = Array.isArray(files.videos) && files.videos[0] ? files.videos[0] : null;
-  const posterFile = Array.isArray(files.poster) && files.poster[0] ? files.poster[0] : null;
-  const zipFile = Array.isArray(files.zipFile) && files.zipFile[0] ? files.zipFile[0] : null;
-  const videoMode = isVideoCategory(category);
-  const imageUrls = [];
-  let videoUrl = "";
-  let posterUrl = "";
-  if (videoMode) {
-    videoUrl = videoFile ? fileUrl(req, videoFile) : String(req.body.videoUrl || "").trim();
-    posterUrl = posterFile
-      ? await convertImageFileToWebp(req, posterFile)
-      : String(req.body.posterUrl || req.body.imageUrl || "").trim();
-  } else {
-    for (const f of imageFiles) {
-      const converted = await convertImageFileToWebp(req, f);
-      if (converted) imageUrls.push(converted);
-    }
-  }
-  const zipFileUrl = zipFile ? fileUrl(req, zipFile) : String(req.body.zipFileUrl || "").trim();
-  if (!zipFileUrl) return res.status(400).json({ message: "ZIP file is required." });
-  if (videoMode && !videoUrl) {
-    return res.status(400).json({ message: "Video file is required for video category." });
-  }
-  if (videoMode && !posterUrl) {
-    return res.status(400).json({ message: "Poster image is required for video category." });
-  }
-  if (!videoMode && !imageUrls.length && !String(req.body.imageUrl || "").trim()) {
-    return res.status(400).json({ message: "At least one image is required." });
-  }
-  const now = new Date();
-  const payload = {
-    title,
-    description,
-    category,
-    type,
-    liveLink,
-    price,
-    imageUrls: videoMode
-      ? [posterUrl]
-      : (imageUrls.length ? imageUrls : [String(req.body.imageUrl || "").trim()]),
-    imageUrl: videoMode
-      ? posterUrl
-      : (imageUrls[0] || String(req.body.imageUrl || "").trim()),
-    mediaKind: videoMode ? "video" : "image",
-    videoUrl: videoMode ? videoUrl : "",
-    posterUrl: videoMode ? posterUrl : "",
-    imageData: "",
-    zipFileUrl,
-    sellerId: req.user.id,
-    sellerEmail: seller.email || req.user.email || "",
-    sellerShopName: seller.shopName || req.user.shopName || "",
-    salesCount: 0,
-    status: "pending",
-    createdAt: now,
-    updatedAt: now
-  };
-  await db.collection("posts").insertOne(payload);
-  return res.json({ message: "Product submitted." });
-});
-
 app.post("/api/products", authMiddleware, requireSeller, maybeProductFiles, async (req, res) => {
   const db = await getDb();
   const users = await db.collection("users").find({ _id: new ObjectId(req.user.id) }).toArray();
@@ -711,6 +610,9 @@ app.post("/api/products", authMiddleware, requireSeller, maybeProductFiles, asyn
       if (converted) imageUrls.push(converted);
     }
   }
+  if (!videoMode && imageUrls.length > MAX_PRODUCT_IMAGES) {
+    return res.status(400).json({ message: `Maximum ${MAX_PRODUCT_IMAGES} images allowed.` });
+  }
   const zipFileUrl = zipFile ? fileUrl(req, zipFile) : String(req.body.zipFileUrl || "").trim();
   if (!zipFileUrl) return res.status(400).json({ message: "ZIP file is required." });
   if (videoMode && !videoUrl) {
@@ -753,84 +655,6 @@ app.post("/api/products", authMiddleware, requireSeller, maybeProductFiles, asyn
   return res.json({ message: "Product submitted." });
 });
 
-app.put("/api/posts/:id", authMiddleware, requireSeller, maybeProductFiles, async (req, res) => {
-  const db = await getDb();
-  const item = await db.collection("posts").findOne({ _id: new ObjectId(req.params.id) });
-  if (!item) return res.status(404).json({ message: "Not found" });
-  const ownsById = item.sellerId === req.user.id || item.userId === req.user.id;
-  const ownsByEmail = (item.sellerEmail && item.sellerEmail === req.user.email) || (item.userEmail && item.userEmail === req.user.email);
-  if (!ownsById && !ownsByEmail) return res.status(403).json({ message: "Forbidden" });
-
-  const currentImages = Array.isArray(item.imageUrls) && item.imageUrls.length
-    ? item.imageUrls
-    : (item.imageUrl ? [item.imageUrl] : []);
-  const currentVideo = String(item.videoUrl || "");
-  const existingImages = req.body.existingImages !== undefined
-    ? parseList(req.body.existingImages)
-    : currentImages;
-  const removedImages = currentImages.filter((url) => !existingImages.includes(url));
-  await Promise.all(removedImages.map((url) => deleteUpload(url)));
-  const files = req.files || {};
-  const imageFiles = Array.isArray(files.images) ? files.images : [];
-  const videoFile = Array.isArray(files.videos) && files.videos[0] ? files.videos[0] : null;
-  const posterFile = Array.isArray(files.poster) && files.poster[0] ? files.poster[0] : null;
-  const newUrls = [];
-  for (const f of imageFiles) {
-    const converted = await convertImageFileToWebp(req, f);
-    if (converted) newUrls.push(converted);
-  }
-  const imageUrls = [...existingImages, ...newUrls];
-  const zipFile = Array.isArray(files.zipFile) && files.zipFile[0] ? files.zipFile[0] : null;
-  const zipFileUrl = zipFile ? fileUrl(req, zipFile) : (req.body.zipFileUrl || item.zipFileUrl || "");
-  if (!zipFileUrl) return res.status(400).json({ message: "ZIP file is required." });
-  const nextCategory = String(req.body.category || item.category || "").trim();
-  const videoMode = isVideoCategory(nextCategory);
-  let nextVideoUrl = currentVideo;
-  if (videoFile) {
-    nextVideoUrl = fileUrl(req, videoFile);
-    if (currentVideo && currentVideo !== nextVideoUrl) await deleteUpload(currentVideo);
-  } else if (req.body.videoUrl !== undefined) {
-    nextVideoUrl = String(req.body.videoUrl || "").trim();
-    if (!nextVideoUrl && currentVideo) await deleteUpload(currentVideo);
-  }
-  let nextPosterUrl = imageUrls[0] || String(req.body.posterUrl || item.posterUrl || item.imageUrl || "").trim();
-  if (posterFile) {
-    const convertedPoster = await convertImageFileToWebp(req, posterFile);
-    if (convertedPoster) {
-      if (nextPosterUrl && nextPosterUrl !== convertedPoster) await deleteUpload(nextPosterUrl);
-      nextPosterUrl = convertedPoster;
-    }
-  } else if (req.body.posterUrl !== undefined) {
-    nextPosterUrl = String(req.body.posterUrl || "").trim();
-  }
-  if (videoMode && !nextVideoUrl) return res.status(400).json({ message: "Video is required for video category." });
-  if (videoMode && !nextPosterUrl) return res.status(400).json({ message: "Poster is required for video category." });
-  if (!videoMode && !imageUrls.length && !String(req.body.imageUrl || item.imageUrl || "").trim()) {
-    return res.status(400).json({ message: "At least one image is required." });
-  }
-  const payload = {
-    title: String(req.body.title || item.title || "").trim(),
-    description: String(req.body.description || item.description || "").trim(),
-    category: nextCategory,
-    type: String(req.body.type || item.type || "").trim(),
-    liveLink: String(req.body.liveLink || item.liveLink || "").trim(),
-    price: Number(req.body.price || item.price || 0),
-    imageUrls: videoMode
-      ? [nextPosterUrl]
-      : (imageUrls.length ? imageUrls : currentImages),
-    imageUrl: videoMode
-      ? nextPosterUrl
-      : (imageUrls[0] || currentImages[0] || ""),
-    mediaKind: videoMode ? "video" : "image",
-    videoUrl: videoMode ? nextVideoUrl : "",
-    posterUrl: videoMode ? nextPosterUrl : "",
-    zipFileUrl,
-    updatedAt: new Date()
-  };
-  await db.collection("posts").updateOne({ _id: new ObjectId(req.params.id) }, { $set: payload });
-  return res.json({ message: "Updated" });
-});
-
 app.put("/api/products/:id", authMiddleware, requireSeller, maybeProductFiles, async (req, res) => {
   const db = await getDb();
   const item = await db.collection("posts").findOne({ _id: new ObjectId(req.params.id) });
@@ -856,7 +680,7 @@ app.put("/api/products/:id", authMiddleware, requireSeller, maybeProductFiles, a
     const converted = await convertImageFileToWebp(req, f);
     if (converted) newUrls.push(converted);
   }
-  const imageUrls = [...existingImages, ...newUrls];
+  const imageUrls = Array.from(new Set([...existingImages, ...newUrls].filter(Boolean)));
   const zipFile = Array.isArray(files.zipFile) && files.zipFile[0] ? files.zipFile[0] : null;
   const zipFileUrl = zipFile ? fileUrl(req, zipFile) : (req.body.zipFileUrl || item.zipFileUrl || "");
   if (!zipFileUrl) return res.status(400).json({ message: "ZIP file is required." });
@@ -882,6 +706,9 @@ app.put("/api/products/:id", authMiddleware, requireSeller, maybeProductFiles, a
   }
   if (videoMode && !nextVideoUrl) return res.status(400).json({ message: "Video is required for video category." });
   if (videoMode && !nextPosterUrl) return res.status(400).json({ message: "Poster is required for video category." });
+  if (!videoMode && imageUrls.length > MAX_PRODUCT_IMAGES) {
+    return res.status(400).json({ message: `Maximum ${MAX_PRODUCT_IMAGES} images allowed.` });
+  }
   if (!videoMode && !imageUrls.length && !String(req.body.imageUrl || item.imageUrl || "").trim()) {
     return res.status(400).json({ message: "At least one image is required." });
   }
@@ -930,7 +757,7 @@ app.put("/api/admin/posts/:id", adminMiddleware, maybeProductFiles, async (req, 
     const converted = await convertImageFileToWebp(req, f);
     if (converted) newUrls.push(converted);
   }
-  const imageUrls = [...existingImages, ...newUrls].filter(Boolean);
+  const imageUrls = Array.from(new Set([...existingImages, ...newUrls].filter(Boolean)));
   const zipFile = Array.isArray(files.zipFile) && files.zipFile[0] ? files.zipFile[0] : null;
   const zipFileUrl = zipFile ? fileUrl(req, zipFile) : (req.body.zipFileUrl || current.zipFileUrl || "");
   const nextCategory = String(req.body.category || current.category || "").trim();
@@ -955,6 +782,9 @@ app.put("/api/admin/posts/:id", adminMiddleware, maybeProductFiles, async (req, 
   }
   if (videoMode && !nextVideoUrl) return res.status(400).json({ message: "Video is required for video category." });
   if (videoMode && !nextPosterUrl) return res.status(400).json({ message: "Poster is required for video category." });
+  if (!videoMode && imageUrls.length > MAX_PRODUCT_IMAGES) {
+    return res.status(400).json({ message: `Maximum ${MAX_PRODUCT_IMAGES} images allowed.` });
+  }
   if (!videoMode && !imageUrls.length && !String(req.body.imageUrl || current.imageUrl || "").trim()) {
     return res.status(400).json({ message: "At least one image is required." });
   }
@@ -1007,7 +837,7 @@ app.put("/api/admin/products/:id", adminMiddleware, maybeProductFiles, async (re
     const converted = await convertImageFileToWebp(req, f);
     if (converted) newUrls.push(converted);
   }
-  const imageUrls = [...existingImages, ...newUrls].filter(Boolean);
+  const imageUrls = Array.from(new Set([...existingImages, ...newUrls].filter(Boolean)));
   const zipFile = Array.isArray(files.zipFile) && files.zipFile[0] ? files.zipFile[0] : null;
   const zipFileUrl = zipFile ? fileUrl(req, zipFile) : (req.body.zipFileUrl || current.zipFileUrl || "");
   const nextCategory = String(req.body.category || current.category || "").trim();
@@ -1032,6 +862,9 @@ app.put("/api/admin/products/:id", adminMiddleware, maybeProductFiles, async (re
   }
   if (videoMode && !nextVideoUrl) return res.status(400).json({ message: "Video is required for video category." });
   if (videoMode && !nextPosterUrl) return res.status(400).json({ message: "Poster is required for video category." });
+  if (!videoMode && imageUrls.length > MAX_PRODUCT_IMAGES) {
+    return res.status(400).json({ message: `Maximum ${MAX_PRODUCT_IMAGES} images allowed.` });
+  }
   if (!videoMode && !imageUrls.length && !String(req.body.imageUrl || current.imageUrl || "").trim()) {
     return res.status(400).json({ message: "At least one image is required." });
   }
@@ -1143,6 +976,20 @@ app.put("/api/settings/web", adminMiddleware, maybeSettingsAssets, async (req, r
       acc[key] = existing?.[key] || "";
       return acc;
     }, {});
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "heroBg")) {
+      const nextHeroBg = sanitizeHttpUrl(req.body.heroBg);
+      if (nextHeroBg !== heroBg) {
+        await deleteUpload(heroBg);
+        heroBg = nextHeroBg;
+      }
+    }
+    for (const key of FOREGROUND_SETTING_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(req.body || {}, key)) continue;
+      const nextForeground = sanitizeHttpUrl(req.body[key]);
+      if (nextForeground === foregroundValues[key]) continue;
+      await deleteUpload(foregroundValues[key]);
+      foregroundValues[key] = nextForeground;
+    }
     if (heroImageFile) {
       const nextImage = await convertImageFileToWebp(req, heroImageFile);
       if (nextImage) {
@@ -1186,10 +1033,7 @@ app.put("/api/settings/web", adminMiddleware, maybeSettingsAssets, async (req, r
 
 app.get("/api/admin/pending", adminMiddleware, async (req, res) => {
   const db = await getDb();
-  const [jobs, properties, pets, posts, users] = await Promise.all([
-    db.collection("jobs").find({ status: "pending" }).sort({ createdAt: -1 }).toArray(),
-    db.collection("properties").find({ status: "pending" }).sort({ createdAt: -1 }).toArray(),
-    db.collection("pets").find({ status: "pending" }).sort({ createdAt: -1 }).toArray(),
+  const [posts, users] = await Promise.all([
     db.collection("posts").find({ status: "pending" }).sort({ createdAt: -1 }).toArray(),
     db.collection("users").find({}, { projection: { password: 0, passwordHash: 0 } }).toArray()
   ]);
@@ -1200,18 +1044,13 @@ app.get("/api/admin/pending", adminMiddleware, async (req, res) => {
     const isPaidUser = !!(user?.paid && user?.paidUntil && new Date(user.paidUntil) > new Date());
     return { ...post, isPaidUser, paidUntil: user?.paidUntil || null };
   });
-  return res.json({ jobs, properties, pets, posts: enrichedPosts });
+  return res.json({ jobs: [], properties: [], pets: [], posts: enrichedPosts });
 });
 
 app.get("/api/admin/approved", adminMiddleware, async (req, res) => {
   const db = await getDb();
-  const [jobs, properties, pets, posts] = await Promise.all([
-    db.collection("jobs").find({ status: "approved" }).sort({ createdAt: -1 }).toArray(),
-    db.collection("properties").find({ status: "approved" }).sort({ createdAt: -1 }).toArray(),
-    db.collection("pets").find({ status: "approved" }).sort({ createdAt: -1 }).toArray(),
-    db.collection("posts").find({ status: "approved" }).sort({ createdAt: -1 }).toArray()
-  ]);
-  return res.json({ jobs, properties, pets, posts });
+  const posts = await db.collection("posts").find({ status: "approved" }).sort({ createdAt: -1 }).toArray();
+  return res.json({ jobs: [], properties: [], pets: [], posts });
 });
 
 app.get("/api/admin/users", adminMiddleware, async (req, res) => {
@@ -1260,6 +1099,62 @@ app.get("/api/admin/trending", adminMiddleware, async (req, res) => {
   const items = Object.entries(counts).map(([name, count]) => ({ name, count }));
   items.sort((a, b) => b.count - a.count);
   return res.json(items);
+});
+
+app.get("/api/admin/metrics/trends", adminMiddleware, async (req, res) => {
+  const db = await getDb();
+  const requestedDays = parseInt(req.query.days || "8", 10);
+  const days = Number.isFinite(requestedDays) ? Math.min(30, Math.max(7, requestedDays)) : 8;
+  const now = new Date();
+  const endUtcDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const startUtcDay = new Date(endUtcDay);
+  startUtcDay.setUTCDate(startUtcDay.getUTCDate() - (days - 1));
+  const dayKeys = Array.from({ length: days }, (_, idx) => {
+    const day = new Date(startUtcDay);
+    day.setUTCDate(startUtcDay.getUTCDate() + idx);
+    return day.toISOString().slice(0, 10);
+  });
+  const [usersAgg, postsAgg] = await Promise.all([
+    db.collection("users").aggregate([
+      { $match: { createdAt: { $gte: startUtcDay } } },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$createdAt",
+              timezone: "UTC"
+            }
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ]).toArray(),
+    db.collection("posts").aggregate([
+      { $match: { createdAt: { $gte: startUtcDay } } },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$createdAt",
+              timezone: "UTC"
+            }
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ]).toArray()
+  ]);
+  const toSeries = (rows = []) => {
+    const map = new Map(rows.map((row) => [row._id, row.count]));
+    return dayKeys.map((day) => map.get(day) || 0);
+  };
+  return res.json({
+    days: dayKeys,
+    users: toSeries(usersAgg),
+    products: toSeries(postsAgg)
+  });
 });
 
 app.get("/api/seller/products", authMiddleware, requireSeller, async (req, res) => {
@@ -1313,6 +1208,85 @@ app.get("/api/seller/stats", authMiddleware, requireSeller, async (req, res) => 
     createdAt: item.createdAt
   }));
   return res.json({ totalProducts, totalSalesCount, totalOrders, totalEarnings, topProducts, recentOrders });
+});
+
+app.get("/api/seller/top-products", authMiddleware, requireSeller, async (req, res) => {
+  const db = await getDb();
+  const page = Math.max(1, parseInt(req.query.page || "1", 10));
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || "10", 10)));
+  const sellerFilters = [{ sellerId: String(req.user.id) }];
+  if (req.user.email) {
+    sellerFilters.push({ sellerEmail: String(req.user.email) });
+    sellerFilters.push({ userEmail: String(req.user.email) });
+  }
+  sellerFilters.push({ userId: String(req.user.id) });
+  const query = {
+    $and: [
+      { $or: sellerFilters },
+      { salesCount: { $gte: 1 } }
+    ]
+  };
+  const total = await db.collection("posts").countDocuments(query);
+  const items = await db
+    .collection("posts")
+    .find(query)
+    .sort({ salesCount: -1, createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .project({ title: 1, salesCount: 1 })
+    .toArray();
+  return res.json({
+    items: items.map((item) => ({
+      title: item.title || "Untitled",
+      salesCount: Number(item.salesCount || 0)
+    })),
+    page,
+    pages: Math.max(1, Math.ceil(total / limit)),
+    total
+  });
+});
+
+app.get("/api/seller/orders", authMiddleware, requireSeller, async (req, res) => {
+  const db = await getDb();
+  const page = Math.max(1, parseInt(req.query.page || "1", 10));
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || "10", 10)));
+  const search = String(req.query.search || "").trim();
+  const sellerFilters = [{ sellerId: String(req.user.id) }];
+  if (req.user.email) {
+    sellerFilters.push({ sellerEmail: String(req.user.email) });
+  }
+  const and = [{ $or: sellerFilters }];
+  if (search) {
+    and.push({
+      $or: [
+        { userEmail: { $regex: search, $options: "i" } },
+        { productId: { $regex: search, $options: "i" } },
+        { productTitle: { $regex: search, $options: "i" } },
+        { paymentId: { $regex: search, $options: "i" } },
+        { orderId: { $regex: search, $options: "i" } }
+      ]
+    });
+  }
+  const query = { $and: and };
+  const total = await db.collection("purchases").countDocuments(query);
+  const raw = await db
+    .collection("purchases")
+    .find(query)
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .toArray();
+  const items = raw.map((item) => ({
+    purchaseId: item._id,
+    productId: item.productId || "",
+    productTitle: item.productTitle || "Untitled",
+    buyerEmail: item.userEmail || "",
+    paymentId: item.paymentId || "",
+    orderId: item.orderId || "",
+    amount: Number(item.amount || 0),
+    createdAt: item.createdAt
+  }));
+  return res.json({ items, page, pages: Math.max(1, Math.ceil(total / limit)), total });
 });
 
 app.post("/api/checkout/create-order", authMiddleware, requireBuyer, async (req, res) => {
@@ -1489,65 +1463,6 @@ app.get("/api/products/:id/download", authMiddleware, async (req, res) => {
   return res.json({ downloadUrl: product.zipFileUrl });
 });
 
-app.post("/api/payments/create-order", authMiddleware, requireBuyer, async (req, res) => {
-  try {
-    const amount = 35000;
-    const payload = {
-      amount,
-      currency: "INR",
-      receipt: `puneclass_${Date.now()}`,
-      payment_capture: 1
-    };
-    const auth = Buffer.from(`${razorpayKeyId}:${razorpayKeySecret}`).toString("base64");
-    const response = await fetch("https://api.razorpay.com/v1/orders", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Basic ${auth}`
-      },
-      body: JSON.stringify(payload)
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      return res.status(400).json({ message: data.error?.description || "Order creation failed" });
-    }
-    return res.json({ order: data, keyId: razorpayKeyId });
-  } catch (err) {
-    return res.status(500).json({ message: "Payment order failed" });
-  }
-});
-
-app.post("/api/payments/verify", authMiddleware, requireBuyer, async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-    return res.status(400).json({ message: "Missing payment verification details" });
-  }
-  const generated = crypto
-    .createHmac("sha256", razorpayKeySecret)
-    .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-    .digest("hex");
-  if (generated !== razorpay_signature) {
-    return res.status(400).json({ message: "Payment verification failed" });
-  }
-  const db = await getDb();
-  const paidUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  await db.collection("users").updateOne(
-    { _id: new ObjectId(req.user.id) },
-    { $set: { paid: true, paidUntil, updatedAt: new Date() } }
-  );
-  await db.collection("payments").insertOne({
-    userId: req.user.id,
-    email: req.user.email,
-    amount: 350,
-    currency: "INR",
-    orderId: razorpay_order_id,
-    paymentId: razorpay_payment_id,
-    paidUntil,
-    createdAt: new Date()
-  });
-  return res.json({ message: "Payment verified", paidUntil });
-});
-
 app.delete("/api/admin/users/:id", adminMiddleware, async (req, res) => {
   const db = await getDb();
   await db.collection("users").deleteOne({ _id: new ObjectId(req.params.id) });
@@ -1582,16 +1497,6 @@ app.get("/api/me", authMiddleware, async (req, res) => {
     paidUntil: user.paidUntil || null,
     earnings
   });
-});
-
-app.get("/api/me/payments", authMiddleware, async (req, res) => {
-  const db = await getDb();
-  const items = await db
-    .collection("payments")
-    .find({ userId: req.user.id })
-    .sort({ createdAt: -1 })
-    .toArray();
-  return res.json(items);
 });
 
 app.use((err, req, res, next) => {
