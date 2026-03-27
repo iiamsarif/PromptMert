@@ -107,11 +107,17 @@ const maybeSettingsAssets = (req, res, next) => {
   if (req.is("multipart/form-data")) {
     return multer({ storage, limits: { fileSize: 120 * 1024 * 1024 } }).fields([
       { name: "heroImage", maxCount: 1 },
-      { name: "heroVideo", maxCount: 1 }
+      { name: "heroVideo", maxCount: 1 },
+      { name: "foreBg1", maxCount: 1 },
+      { name: "foreBg2", maxCount: 1 },
+      { name: "foreBg3", maxCount: 1 },
+      { name: "foreBg4", maxCount: 1 },
+      { name: "foreBg5", maxCount: 1 }
     ])(req, res, next);
   }
   return next();
 };
+const FOREGROUND_SETTING_KEYS = ["foreBg1", "foreBg2", "foreBg3", "foreBg4", "foreBg5"];
 const fileUrl = (req, file) =>
   file ? `${req.protocol}://${req.get("host")}/uploads/${file.filename}` : "";
 const saveWebpImage = async (req, file) => {
@@ -1115,7 +1121,12 @@ app.get("/api/settings/web", async (req, res) => {
   return res.json({
     heroImage: web.heroImage || "",
     heroBg: web.heroBg || "",
-    contactEmail: web.contactEmail || ""
+    contactEmail: web.contactEmail || "",
+    foreBg1: web.foreBg1 || "",
+    foreBg2: web.foreBg2 || "",
+    foreBg3: web.foreBg3 || "",
+    foreBg4: web.foreBg4 || "",
+    foreBg5: web.foreBg5 || ""
   });
 });
 
@@ -1125,8 +1136,13 @@ app.put("/api/settings/web", adminMiddleware, maybeSettingsAssets, async (req, r
     const existing = await db.collection("settings").findOne({ key: "web" });
     const heroImageFile = req.files?.heroImage?.[0] || null;
     const heroVideoFile = req.files?.heroVideo?.[0] || null;
+    const foregroundFiles = FOREGROUND_SETTING_KEYS.map((key) => ({ key, file: req.files?.[key]?.[0] || null }));
     let heroImage = existing?.heroImage || "";
     let heroBg = existing?.heroBg || "";
+    const foregroundValues = FOREGROUND_SETTING_KEYS.reduce((acc, key) => {
+      acc[key] = existing?.[key] || "";
+      return acc;
+    }, {});
     if (heroImageFile) {
       const nextImage = await convertImageFileToWebp(req, heroImageFile);
       if (nextImage) {
@@ -1134,12 +1150,19 @@ app.put("/api/settings/web", adminMiddleware, maybeSettingsAssets, async (req, r
         heroImage = nextImage;
       }
     }
-  if (heroVideoFile) {
+    if (heroVideoFile) {
       const nextVideo = fileUrl(req, heroVideoFile);
       if (nextVideo) {
         await deleteUpload(heroBg);
         heroBg = nextVideo;
       }
+    }
+    for (const entry of foregroundFiles) {
+      if (!entry.file) continue;
+      const nextForeground = await convertImageFileToWebp(req, entry.file);
+      if (!nextForeground) continue;
+      await deleteUpload(foregroundValues[entry.key]);
+      foregroundValues[entry.key] = nextForeground;
     }
     await db.collection("settings").updateOne(
       { key: "web" },
@@ -1149,6 +1172,7 @@ app.put("/api/settings/web", adminMiddleware, maybeSettingsAssets, async (req, r
           heroImage,
           heroBg,
           contactEmail: req.body.contactEmail || "",
+          ...foregroundValues,
           updatedAt: new Date()
         }
       },
