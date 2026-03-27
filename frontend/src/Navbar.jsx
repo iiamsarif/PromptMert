@@ -130,9 +130,15 @@ const Navbar = ({ apiBase }) => {
           {token && (
             <>
               <NavLink to={cartPath} className="nav-icon-btn" aria-label="Cart" onClick={() => setOpen(false)}>
-                <span className="nav-icon">🛒</span>
+                <span className="nav-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="9" cy="20" r="1.5" />
+                    <circle cx="17" cy="20" r="1.5" />
+                    <path d="M3 4h2l2.2 10.2a1.7 1.7 0 0 0 1.7 1.3h7.8a1.7 1.7 0 0 0 1.7-1.4L20 8H7.2" />
+                  </svg>
+                </span>
               </NavLink>
-                            <NavLink to={accountPath} className="profile-btn" aria-label="Profile" onClick={() => setOpen(false)}>
+              <NavLink to={accountPath} className="profile-btn" aria-label="Profile" onClick={() => setOpen(false)}>
                 <span className="profile-avatar">
                   {(user?.name || "U").slice(0, 1).toUpperCase()}
                 </span>
@@ -154,3 +160,4 @@ const Navbar = ({ apiBase }) => {
 };
 
 export default Navbar;
+
